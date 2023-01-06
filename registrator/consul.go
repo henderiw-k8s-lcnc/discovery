@@ -12,8 +12,8 @@ import (
 	"github.com/hashicorp/consul/api"
 	"github.com/pkg/errors"
 
-	corev1 "k8s.io/api/core/v1"
-	"sigs.k8s.io/controller-runtime/pkg/client"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/client-go/kubernetes"
 )
 
 const (
@@ -35,7 +35,7 @@ type consul struct {
 	//serviceConfig *serviceConfig
 	consulConfig *consulConfig
 	// kubernetes
-	client client.Client
+	clientset *kubernetes.Clientset
 	// consul
 	consulClient *api.Client
 	// services
@@ -44,7 +44,7 @@ type consul struct {
 	cfn      map[string]context.CancelFunc // used for canceling the watch
 }
 
-func newConsulRegistrator(ctx context.Context, c client.Client, namespace, dcName string, opts ...Option) (Registrator, error) {
+func newConsulRegistrator(ctx context.Context, clientSet *kubernetes.Clientset, namespace, dcName string, opts ...Option) (Registrator, error) {
 	// if the namespace is not provided we initialize to consul namespace
 	if namespace == "" {
 		namespace = "consul"
@@ -55,9 +55,9 @@ func newConsulRegistrator(ctx context.Context, c client.Client, namespace, dcNam
 			Namespace:  namespace,
 			Datacenter: dcName,
 		},
-		client:   c,
-		services: map[string]chan struct{}{},
-		cfn:      map[string]context.CancelFunc{},
+		clientset: clientSet,
+		services:  map[string]chan struct{}{},
+		cfn:       map[string]context.CancelFunc{},
 	}
 
 	for _, opt := range opts {
@@ -110,22 +110,27 @@ func (r *consul) createClient() error {
 	return nil
 }
 
-func (r *consul) WithClient(c client.Client) {
-	r.client = c
-}
-
 func (r *consul) init(ctx context.Context) {
 	//log := r.log.WithValues("Consul", *r.consulConfig)
 	//log.Debug("consul init, trying to find daemonset...")
 
 CONSULDAEMONSETPOD:
 	// get all the pods in the consul namespace
-	opts := []client.ListOption{
-		client.InNamespace(r.consulConfig.Namespace),
-	}
-	pods := &corev1.PodList{}
-	if err := r.client.List(ctx, pods, opts...); err != nil {
-		//log.Debug("cannot list pods on k8s api", "err", err)
+	/*
+		opts := []client.ListOption{
+			client.InNamespace(r.consulConfig.Namespace),
+		}
+
+		pods := &corev1.PodList{}
+		if err := r.clientset.List(ctx, pods, opts...); err != nil {
+			//log.Debug("cannot list pods on k8s api", "err", err)
+			time.Sleep(2 * time.Second)
+			goto CONSULDAEMONSETPOD
+		}
+	*/
+
+	pods, err := r.clientset.CoreV1().Pods(r.consulConfig.Namespace).List(ctx, metav1.ListOptions{})
+	if err != nil {
 		time.Sleep(2 * time.Second)
 		goto CONSULDAEMONSETPOD
 	}

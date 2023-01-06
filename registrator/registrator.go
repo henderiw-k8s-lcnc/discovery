@@ -5,10 +5,8 @@ import (
 	"time"
 
 	"github.com/henderiw-k8s-lcnc/discovery/discovery"
-	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
-	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
 const (
@@ -71,7 +69,7 @@ const (
 )
 
 type Options struct {
-	Scheme                    *runtime.Scheme
+	//Scheme                    *runtime.Scheme
 	ServiceDiscoveryDcName    string
 	ServiceDiscovery          discovery.ServiceDiscoveryType
 	ServiceDiscoveryNamespace string
@@ -81,7 +79,8 @@ type Options struct {
 func New(ctx context.Context, config *rest.Config, o *Options) (Registrator, error) {
 	switch o.ServiceDiscovery {
 	case discovery.ServiceDiscoveryTypeConsul:
-		c, err := getClient(config, o)
+
+		c, err := kubernetes.NewForConfig(config)
 		if err != nil {
 			return nil, err
 		}
@@ -95,11 +94,4 @@ func New(ctx context.Context, config *rest.Config, o *Options) (Registrator, err
 	default:
 		return newNopRegistrator(o), nil
 	}
-}
-
-func getClient(config *rest.Config, o *Options) (client.Client, error) {
-	// get client
-	return client.New(config, client.Options{
-		Scheme: o.Scheme,
-	})
 }
