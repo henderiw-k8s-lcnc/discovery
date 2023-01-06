@@ -27,7 +27,7 @@ const (
 )
 
 func newK8sRegistrator(ctx context.Context, clientSet *kubernetes.Clientset, namespace string, opts ...Option) (Registrator, error) {
-	l := ctrl.Log.WithName("block fn")
+	l := ctrl.Log.WithName("k8s-registrator")
 
 	if namespace == "" {
 		namespace = "ndd-system"
