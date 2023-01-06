@@ -261,6 +261,9 @@ func tagsToMap(tags []string) map[string]string {
 }
 
 func (r *k8sRegistrator) serviceToLease(s *Service) *coordinationv1.Lease {
+	if s.ID == "" {
+		s.ID = "dummy"
+	}
 	labels := map[string]string{
 		serviceNameLabelKey:    s.Name,
 		serviceIDLabelKey:      strings.ReplaceAll(s.ID, "/", "."),
@@ -268,12 +271,11 @@ func (r *k8sRegistrator) serviceToLease(s *Service) *coordinationv1.Lease {
 		servicePortLabelKey:    strconv.Itoa(s.Port),
 	}
 	for k, v := range tagsToMap(s.Tags) {
+
 		labels[k] = v
 	}
 
-	if s.ID == "" {
-		s.ID = "dummy"
-	}
+	
 	leaseName := fmt.Sprintf("%s-%s", s.Name, s.ID)
 	leaseName = strings.ReplaceAll(leaseName, "/", "-")
 	return &coordinationv1.Lease{
