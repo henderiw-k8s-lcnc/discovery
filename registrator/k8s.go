@@ -200,7 +200,7 @@ func (r *k8sRegistrator) Watch(ctx context.Context, serviceName string, tags []s
 }
 
 func (r *k8sRegistrator) WatchCh(ctx context.Context, serviceName string, tags []string, opts WatchOptions, ch chan *ServiceResponse) {
-  r.l.WithValues("serviceName", serviceName)
+	r.l.WithValues("serviceName", serviceName)
 	wi, ok := r.watches[serviceName]
 	if ok && wi != nil {
 		wi.Stop()
@@ -269,6 +269,10 @@ func (r *k8sRegistrator) serviceToLease(s *Service) *coordinationv1.Lease {
 	}
 	for k, v := range tagsToMap(s.Tags) {
 		labels[k] = v
+	}
+
+	if s.ID == "" {
+		s.ID = "dummy"
 	}
 	leaseName := fmt.Sprintf("%s-%s", s.Name, s.ID)
 	leaseName = strings.ReplaceAll(leaseName, "/", "-")
