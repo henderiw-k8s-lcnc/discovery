@@ -8,6 +8,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/go-logr/logr"
 	coordinationv1 "k8s.io/api/coordination/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -15,6 +16,7 @@ import (
 	"k8s.io/apimachinery/pkg/watch"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/utils/pointer"
+	ctrl "sigs.k8s.io/controller-runtime"
 )
 
 const (
@@ -25,6 +27,8 @@ const (
 )
 
 func newK8sRegistrator(ctx context.Context, clientSet *kubernetes.Clientset, namespace string, opts ...Option) (Registrator, error) {
+	l := ctrl.Log.WithName("block fn")
+
 	if namespace == "" {
 		namespace = "ndd-system"
 	}
@@ -34,6 +38,7 @@ func newK8sRegistrator(ctx context.Context, clientSet *kubernetes.Clientset, nam
 		watches:        make(map[string]watch.Interface),
 		acquiredLeases: make(map[string]*acquiredLease),
 		m:              &sync.RWMutex{},
+		l:              l,
 	}
 	for _, opt := range opts {
 		opt(r)
@@ -50,6 +55,7 @@ type k8sRegistrator struct {
 	acquiredLeases map[string]*acquiredLease
 	// k8s watch interface
 	watches map[string]watch.Interface
+	l       logr.Logger
 }
 
 type acquiredLease struct {
@@ -65,7 +71,7 @@ func (r *k8sRegistrator) Register(ctx context.Context, s *Service) {
 	for {
 		select {
 		case <-ctx.Done():
-			//r.log.Info("register context done", "error", ctx.Err())
+			r.l.Info("register context done", "error", ctx.Err())
 			return
 		case <-doneChan:
 			//r.log.Info("lease done", "lease", l.Name)
@@ -77,17 +83,17 @@ func (r *k8sRegistrator) Register(ctx context.Context, s *Service) {
 			ol, err = r.clientset.CoordinationV1().Leases(r.namespace).Get(ctx, l.Name, metav1.GetOptions{})
 			if err != nil {
 				if !errors.IsNotFound(err) {
-					//r.log.Info("failed to get Leases", "error", err)
+					r.l.Error(err, "failed to get Leases")
 					time.Sleep(defaultWaitTime)
 					continue
 				}
 				// create lease
-				//r.log.Info("lease not found, creating it", "lease", l.Name)
+				r.l.Info("lease not found, creating it", "lease", l.Name)
 				l.Spec.AcquireTime = &now
 				l.Spec.RenewTime = &now
 				ol, err = r.clientset.CoordinationV1().Leases(r.namespace).Create(ctx, l, metav1.CreateOptions{})
 				if err != nil {
-					//r.log.Info("failed to create Lease", "error", err)
+					r.l.Error(err, "failed to create Lease")
 					time.Sleep(defaultWaitTime)
 					continue
 				}
@@ -102,32 +108,32 @@ func (r *k8sRegistrator) Register(ctx context.Context, s *Service) {
 			}
 			// obtained, compare
 			if ol != nil && ol.Spec.HolderIdentity != nil && *ol.Spec.HolderIdentity != "" {
-				//r.log.Info("lease held by other instance", "lease", ol.Name, "identity", *ol.Spec.HolderIdentity == s.Name)
-				//r.log.Info("lease has renewTime", "lease", ol.Name, "renewal", ol.Spec.RenewTime != nil)
+				r.l.Info("lease held by other instance", "lease", ol.Name, "identity", *ol.Spec.HolderIdentity == s.Name)
+				r.l.Info("lease has renewTime", "lease", ol.Name, "renewal", ol.Spec.RenewTime != nil)
 
 				if ol.Spec.RenewTime != nil {
 					expectedRenewTime := ol.Spec.RenewTime.Add(time.Duration(*ol.Spec.LeaseDurationSeconds) * time.Second)
-					//r.log.Info("existing lease renew time", "lease", ol.Name, "renewtime", ol.Spec.RenewTime)
-					//r.log.Info("expected lease renew time", "lease", ol.Name, "expectedrenewTime", expectedRenewTime)
-					//r.log.Info("renew time passed", ol.Name, expectedRenewTime.Before(now.Time))
+					r.l.Info("existing lease renew time", "lease", ol.Name, "renewtime", ol.Spec.RenewTime)
+					r.l.Info("expected lease renew time", "lease", ol.Name, "expectedrenewTime", expectedRenewTime)
+					r.l.Info("renew time passed", ol.Name, expectedRenewTime.Before(now.Time))
 					if !expectedRenewTime.Before(now.Time) {
-						//r.log.Info("lease is currently held by", "lease", ol.Name, "identity", *ol.Spec.HolderIdentity)
+						r.l.Info("lease is currently held by", "lease", ol.Name, "identity", *ol.Spec.HolderIdentity)
 						time.Sleep(defaultRegistrationCheckInterval)
 						continue
 					}
 				}
 			}
-			//r.log.Info("taking over lease", "lease", l.Name)
+			r.l.Info("taking over lease", "lease", l.Name)
 			// update the lease
 			now = metav1.NowMicro()
 			l.Spec.AcquireTime = &now
 			l.Spec.RenewTime = &now
 			// set resource version to the latest value known
 			l.SetResourceVersion(ol.GetResourceVersion())
-			//r.log.Info("updating lease", "lease", l.Name, "with", l)
+			r.l.Info("updating lease", "lease", l.Name, "with", l)
 			ol, err = r.clientset.CoordinationV1().Leases(r.namespace).Update(ctx, l, metav1.UpdateOptions{})
 			if err != nil {
-				//r.log.Info("failed to update Lease", "error", err)
+				r.l.Error(err, "failed to update Lease")
 				time.Sleep(defaultWaitTime)
 				continue
 			}
@@ -152,7 +158,7 @@ func (r *k8sRegistrator) DeRegister(ctx context.Context, id string) {
 		delete(r.acquiredLeases, id)
 		err := r.clientset.CoordinationV1().Leases(r.namespace).Delete(ctx, l.lease.Name, metav1.DeleteOptions{})
 		if err != nil {
-			//r.log.Info("failed to delete lease", "lease", id, "error", err)
+			r.l.Error(err, "failed to delete lease", "lease", id)
 		}
 	}
 }
@@ -194,7 +200,7 @@ func (r *k8sRegistrator) Watch(ctx context.Context, serviceName string, tags []s
 }
 
 func (r *k8sRegistrator) WatchCh(ctx context.Context, serviceName string, tags []string, opts WatchOptions, ch chan *ServiceResponse) {
-	//log := r.log.WithValues("serviceName", serviceName)
+  r.l.WithValues("serviceName", serviceName)
 	wi, ok := r.watches[serviceName]
 	if ok && wi != nil {
 		wi.Stop()
@@ -206,7 +212,7 @@ WATCH:
 		Watch:         true,
 	})
 	if err != nil {
-		//log.Info("failed to create watch", "error", err)
+		r.l.Error(err, "failed to create watch")
 		time.Sleep(defaultWaitTime)
 		goto WATCH
 	}
