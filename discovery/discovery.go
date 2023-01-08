@@ -9,7 +9,6 @@ type ServiceDiscoveryType string
 
 const (
 	ServiceDiscoveryTypeNone   ServiceDiscoveryType = "none"
-	ServiceDiscoveryTypeConsul ServiceDiscoveryType = "consul"
 	ServiceDiscoveryTypeK8s    ServiceDiscoveryType = "k8s"
 )
 

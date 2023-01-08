@@ -30,7 +30,7 @@ func newK8sRegistrator(ctx context.Context, clientSet *kubernetes.Clientset, nam
 	l := ctrl.Log.WithName("k8s-registrator")
 
 	if namespace == "" {
-		namespace = "ndd-system"
+		namespace = "discovery"
 	}
 	r := &k8sRegistrator{
 		namespace:      namespace,
@@ -108,7 +108,7 @@ func (r *k8sRegistrator) Register(ctx context.Context, s *Service) {
 			}
 			// obtained, compare
 			if ol != nil && ol.Spec.HolderIdentity != nil && *ol.Spec.HolderIdentity != "" {
-				r.l.Info("lease held by other instance", "lease", ol.Name, "identity", *ol.Spec.HolderIdentity == s.Name)
+				r.l.Info("lease held by other instance", "lease", ol.Name, "identity", *ol.Spec.HolderIdentity == s.ID)
 				r.l.Info("lease has renewTime", "lease", ol.Name, "renewal", ol.Spec.RenewTime != nil)
 
 				if ol.Spec.RenewTime != nil {
@@ -275,17 +275,14 @@ func (r *k8sRegistrator) serviceToLease(s *Service) *coordinationv1.Lease {
 		labels[k] = v
 	}
 
-	
-	leaseName := fmt.Sprintf("%s-%s", s.Name, s.ID)
-	leaseName = strings.ReplaceAll(leaseName, "/", "-")
 	return &coordinationv1.Lease{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      leaseName,
+			Name:      strings.ReplaceAll(s.Name, "/", "-"),
 			Namespace: r.namespace,
 			Labels:    labels,
 		},
 		Spec: coordinationv1.LeaseSpec{
-			HolderIdentity:       pointer.String(s.Name),
+			HolderIdentity:       pointer.String(strings.ReplaceAll(s.ID, "/", ".")),
 			LeaseDurationSeconds: pointer.Int32(int32(defaultRegistrationCheckInterval / time.Second)),
 		},
 	}

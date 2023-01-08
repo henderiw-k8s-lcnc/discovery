@@ -47,7 +47,7 @@ type Registrator interface {
 }
 
 type Service struct {
-	Name         string       // service name e.g. provider or worker
+	Name         string       // service name
 	ID           string       // service instance
 	Port         int          // service port
 	Address      string       // service address
@@ -78,13 +78,6 @@ type Options struct {
 
 func New(ctx context.Context, config *rest.Config, o *Options) (Registrator, error) {
 	switch o.ServiceDiscovery {
-	case discovery.ServiceDiscoveryTypeConsul:
-
-		c, err := kubernetes.NewForConfig(config)
-		if err != nil {
-			return nil, err
-		}
-		return newConsulRegistrator(ctx, c, o.ServiceDiscoveryNamespace, o.ServiceDiscoveryDcName)
 	case discovery.ServiceDiscoveryTypeK8s:
 		c, err := kubernetes.NewForConfig(config)
 		if err != nil {
